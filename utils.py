@@ -1,5 +1,4 @@
 import torch
-import cv2 as cv
 import numpy as np
 from torchvision import transforms
 from collections import Counter
@@ -177,42 +176,3 @@ def compute_map(pred_boxes, object_boxes ,iou_threshold = 0.5, num_classes = 20)
     recall = torch.cat((torch.tensor([0]), recall))
     average_precisions.append(torch.trapz(precision, recall))
   return sum(average_precisions)/len(average_precisions)
-
-
-def torch_to_cv2(image):
-    # Step 1: Reverse Normalize
-    image = image.cpu()
-    mean = torch.tensor([0.485, 0.456, 0.406]).view(-1, 1, 1)
-    std = torch.tensor([0.229, 0.224, 0.225]).view(-1, 1, 1)
-    image = (image * std) + mean
-  
-    image = image.permute(1, 2, 0).numpy()  # From [C, H, W] to [H, W, C]
-
-    image = (image * 255).astype(np.uint8)
-    image = cv.cvtColor(image, cv.COLOR_RGB2BGR)
-    return image
-
-def visualize(image, labels):
-  """
-  Visualizes the image with bounding boxes.
-  Args:
-    image (torch.Tensor): The image tensor.
-    labels (list): A list of labels. Each label is a list of [class, confidence, x, y, w, h]."""
-  image = torch_to_cv2(image)
-  for label in labels:
-    class_label, confidence, x, y, w, h = label
-    x1 = int((x - w/2) * 448)
-    y1 = int((y - h/2) * 448)
-    x2 = int((x + w/2) * 448)
-    y2 = int((y + h/2) * 448)
-    cv.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
-    cv.putText(image, str(int(class_label)), (x1, y1), cv.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-  cv.imshow("Image", image)
-  cv.waitKey(0)
-  cv.destroyAllWindows()
-
-
-
-    
-
-

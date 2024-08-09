@@ -1,14 +1,20 @@
 import torch
 import torch.nn as nn
 from torchvision.models import efficientnet_v2_s
+from torchvision.ops import generalized_box_iou_loss
+from loss import DetrLoss
 
 class detr(nn.Module):
-  def __init__(self, num_classes = 2, n_queries = 100):
+  def __init__(self, num_classes = 20, n_queries = 100):
     super().__init__()
     self.num_classes = num_classes
     self.n_queries = n_queries
+    self.num_heads = 4
+    self.num_encoder_layers = 2
+    self.num_decoder_layers = 2
+    self.embed_dim = 128
 
-    efficientnet = efficientnet_v2_s()
+    efficientnet = efficientnet_v2_s(weights='DEFAULT')
     self.feature_extractor = nn.Sequential(*list(efficientnet.children())[:-2])
     #freeze batchnorm layers for stability
     for module in self.feature_extractor.modules():
@@ -16,14 +22,14 @@ class detr(nn.Module):
         module.eval()
         for param in module.parameters():
           param.requires_grad = False
-    self.conv = nn.Sequential(nn.Conv2d(1280, 256, 1), nn.BatchNorm2d(256), nn.ReLU())
-    self.transformer = nn.Transformer(256, 8, 6, 6)
-    self.linear_class = nn.Linear(256, num_classes + 1) #projector for class prediction
-    self.linear_bbox = nn.Linear(256, 4) #projector for bounding box prediction
+    self.conv = nn.Sequential(nn.Conv2d(1280, self.embed_dim, 1), nn.BatchNorm2d(self.embed_dim), nn.ReLU())
+    self.transformer = nn.Transformer(self.embed_dim, self.num_heads, self.num_encoder_layers, self.num_decoder_layers)
+    self.linear_class = nn.Linear(self.embed_dim, num_classes + 1) #projector for class prediction
+    self.linear_bbox = nn.Linear(self.embed_dim, 4) #projector for bounding box prediction
 
-    self.query_pos = nn.Parameter(torch.rand(self.n_queries, 256)) #64 queries
-    self.row_embed = nn.Parameter(torch.rand(14, 256//2))
-    self.col_embed = nn.Parameter(torch.rand(14, 256//2))
+    self.query_pos = nn.Parameter(torch.rand(self.n_queries, self.embed_dim)) #64 queries
+    self.row_embed = nn.Parameter(torch.rand(14, self.embed_dim//2))
+    self.col_embed = nn.Parameter(torch.rand(14, self.embed_dim//2))
 
 
 
@@ -38,12 +44,8 @@ class detr(nn.Module):
       self.row_embed.unsqueeze(1).repeat(1,W,1)
     ], dim = -1).flatten(0,1).unsqueeze(1) #unsqueeze at 1 due to transformer expecting batch second 
     x = self.transformer(pos + x, self.query_pos.unsqueeze(1).repeat(1, batch_size, 1))
-    c = self.linear_class(x).transpose(0,1).softmax(-1)
-    b = self.linear_bbox(x).transpose(0,1).sigmoid()
-    return c,b
+    out = {}
+    out['class'] = self.linear_class(x).transpose(0,1).softmax(-1)
+    out['boxes'] = self.linear_bbox(x).transpose(0,1).sigmoid()
+    return out
   
-
-x = torch.randn(2,3,448,448)
-model = detr()
-c,b = model(x)
-print(c.shape, b.shape)
